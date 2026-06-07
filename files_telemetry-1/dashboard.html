@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>QoS Telemetry — Live</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg:        #080c14;
+    --bg2:       #0d1220;
+    --bg3:       #111827;
+    --border:    #1a2235;
+    --border2:   #243044;
+    --text:      #c8d4e3;
+    --text-dim:  #5a6d84;
+    --text-hi:   #e8eef8;
+    --ok:        #34d399;
+    --warn:      #fbbf24;
+    --crit:      #f87171;
+    --accent:    #38bdf8;
+    --ok-bg:     rgba(52,211,153,.1);
+    --warn-bg:   rgba(251,191,36,.1);
+    --crit-bg:   rgba(248,113,113,.1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'IBM Plex Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    padding: 20px 28px;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+
+  .logo {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .logo h1 {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--text-hi);
+  }
+  .logo .sep { color: var(--border2); }
+  .logo .sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 300;
+    letter-spacing: 0.5px;
+  }
+
+  .hdr-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .ws-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border2);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: all .3s;
+  }
+  .ws-pill.connected    { border-color: var(--ok);   color: var(--ok);   background: var(--ok-bg); }
+  .ws-pill.disconnected { border-color: var(--crit); color: var(--crit); background: var(--crit-bg); }
+  .ws-pill.connecting   { border-color: var(--warn); color: var(--warn); background: var(--warn-bg); }
+
+  .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor;
+  }
+  .dot.blink { animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 22px;
+  }
+  .s-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .s-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .s-card.ok   ::before { background: var(--ok); }
+  .s-card.warn ::before { background: var(--warn); }
+  .s-card.crit ::before { background: var(--crit); }
+  .s-card.info ::before { background: var(--accent); }
+
+  .s-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .s-val {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text-hi);
+    line-height: 1;
+  }
+  .s-val .unit { font-size: 12px; color: var(--text-dim); margin-left: 3px; }
+  .s-note {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 5px;
+  }
+
+  .region-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    font-weight: 500;
+    margin: 18px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .region-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 10px;
+  }
+
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .2s, transform .15s;
+  }
+  .card:hover { border-color: var(--border2); transform: translateY(-1px); }
+  .card.ok   { border-left: 3px solid var(--ok); }
+  .card.warn { border-left: 3px solid var(--warn); }
+  .card.crit { border-left: 3px solid var(--crit); }
+
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+  .card-name { font-size: 13px; font-weight: 600; color: var(--text-hi); }
+  .card-host { font-size: 10px; color: var(--text-dim); margin-top: 2px; font-family: 'IBM Plex Mono', monospace; }
+
+  .badge {
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .badge.ok   { background: var(--ok-bg);   color: var(--ok); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); }
+  .badge.crit { background: var(--crit-bg); color: var(--crit); }
+
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .metric {
+    background: var(--bg3);
+    border-radius: 5px;
+    padding: 8px 6px;
+    text-align: center;
+  }
+  .m-label {
+    font-size: 9px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 4px;
+  }
+  .m-val {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .m-unit { font-size: 9px; color: var(--text-dim); }
+  .c-ok   { color: var(--ok); }
+  .c-warn { color: var(--warn); }
+  .c-crit { color: var(--crit); }
+  .c-dim  { color: var(--text-dim); }
+
+  .spark { width: 100%; height: 32px; display: block; margin-bottom: 8px; }
+
+  .card-foot {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+  .card-foot .samples { color: var(--text-dim); }
+  .card-foot .uptime  { color: var(--ok); }
+  .card-foot .uptime.warn { color: var(--warn); }
+  .card-foot .uptime.crit { color: var(--crit); }
+
+  .log-bar {
+    margin-top: 16px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 10px;
+    color: var(--text-dim);
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+  .log-bar span { color: var(--text); }
+  #log-msgs {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  footer {
+    margin-top: 20px;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-align: center;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg2) 25%, var(--bg3) 50%, var(--bg2) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+    border-radius: 4px;
+    height: 12px;
+    margin: 4px 0;
+  }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <h1>QoS<span style="color:var(--ok)">.</span>Telemetry</h1>
+    <span class="sep">/</span>
+    <span class="sub">real-time · socket+asyncio+scapy pipeline</span>
+  </div>
+  <div class="hdr-right">
+    <span>UTC <span id="clock">--:--:--</span></span>
+    <span id="update-ago">—</span>
+    <div class="ws-pill connecting" id="ws-pill">
+      <div class="dot blink"></div>
+      <span id="ws-label">CONNECTING</span>
+    </div>
+  </div>
+</header>
+
+<div class="summary">
+  <div class="s-card info">
+    <div class="s-label">PoP онлайн</div>
+    <div class="s-val" id="s-online">—<span class="unit">/ 20</span></div>
+    <div class="s-note" id="s-online-note">ожидание данных...</div>
+  </div>
+  <div class="s-card ok">
+    <div class="s-label">Latency p95 avg</div>
+    <div class="s-val" id="s-lat">—<span class="unit">ms</span></div>
+    <div class="s-note" id="s-lat-note">—</div>
+  </div>
+  <div class="s-card ok">
+    <div class="s-label">Jitter avg</div>
+    <div class="s-val" id="s-jit">—<span class="unit">ms</span></div>
+    <div class="s-note" id="s-jit-note">—</div>
+  </div>
+  <div class="s-card ok">
+    <div class="s-label">Packet loss avg</div>
+    <div class="s-val" id="s-loss">—<span class="unit">%</span></div>
+    <div class="s-note" id="s-loss-note">—</div>
+  </div>
+  <div class="s-card info">
+    <div class="s-label">Обновлений получено</div>
+    <div class="s-val" id="s-updates">0</div>
+    <div class="s-note" id="s-interval">интервал: —</div>
+  </div>
+</div>
+
+<div class="region-title">Европа · EU</div>
+<div class="grid" id="grid-eu"></div>
+
+<div class="region-title">Россия · RU</div>
+<div class="grid" id="grid-ru"></div>
+
+<div class="region-title">Северная Америка · NA</div>
+<div class="grid" id="grid-na"></div>
+
+<div class="region-title">APAC</div>
+<div class="grid" id="grid-apac"></div>
+
+<div class="region-title">Латинская Америка · Африка · Ближний Восток</div>
+<div class="grid" id="grid-other"></div>
+
+<div class="log-bar">
+  <span>WS log:</span>
+  <span id="log-msgs">ожидание подключения к ws://localhost:8765 ...</span>
+</div>
+
+<footer>
+  pipeline: raw ICMP socket → asyncio.gather → PingAggregator → TCPPublisher → ThreadedTCPServer → DataBus → WebSocketBridge → браузер
+</footer>
+
+<script>
+
+const WS_URL = 'ws://localhost:8765';
+const RECONNECT_DELAY = 3000;
+
+const NODE_META = {
+
+  'Google-DNS-1':      { loc: 'Google Public DNS · anycast global',    region: 'eu'    },
+  'Google-DNS-2':      { loc: 'Google Public DNS secondary',           region: 'eu'    },
+  'CF-Primary':        { loc: 'Cloudflare DNS · anycast global',       region: 'eu'    },
+  'Quad9-Primary':     { loc: 'Quad9 · anycast global',               region: 'eu'    },
+
+  'Amazon-DNS-EU':     { loc: 'Amazon Route53 · EU resolver',          region: 'eu'    },
+  'Amazon-DNS-US':     { loc: 'Amazon Route53 · US resolver',          region: 'na'    },
+
+  'Yandex-DNS-Basic':  { loc: 'Yandex.DNS · basic · Москва',          region: 'ru'    },
+  'Yandex-DNS-Safe':   { loc: 'Yandex.DNS · safe · Москва',           region: 'ru'    },
+  'Yandex-DNS-Family': { loc: 'Yandex.DNS · family · Москва',         region: 'ru'    },
+  'Yandex-DNS-2':      { loc: 'Yandex.DNS · secondary · Москва',      region: 'ru'    },
+
+  'Sber-DNS-1':        { loc: 'SberCloud DNS · Москва',               region: 'ru'    },
+  'Sber-DNS-2':        { loc: 'SberCloud DNS secondary · Москва',     region: 'ru'    },
+
+  'RTK-DNS-1':         { loc: 'Ростелеком DNS · Москва',              region: 'ru'    },
+  'RTK-DNS-2':         { loc: 'Ростелеком DNS secondary',             region: 'ru'    },
+  'MTS-DNS-1':         { loc: 'МТС DNS · Москва',                     region: 'ru'    },
+
+  'NSDI-DNS-1':        { loc: 'РИПН · Москва · .ru zone',            region: 'ru'    },
+  'NSDI-DNS-2':        { loc: 'RU-CENTER DNS · Москва',              region: 'ru'    },
+
+  'Root-K-RIPE':       { loc: 'k.root-servers.net · RIPE NCC Amsterdam', region: 'eu' },
+  'Root-A-Verisign':   { loc: 'a.root-servers.net · Verisign VA',    region: 'na'    },
+  'Root-M-Tokyo':      { loc: 'm.root-servers.net · WIDE Tokyo',     region: 'apac'  },
+  'OpenDNS-1':         { loc: 'OpenDNS primary · Cisco',             region: 'na'    },
+};
+
+let ws = null;
+let updateCount = 0;
+let lastUpdateTs = null;
+let lastUpdateTime = null;
+
+const rttHistory = {};
+const HISTORY_LEN = 30;
+
+function connect() {
+  setPill('connecting', 'CONNECTING');
+  log(`Подключение к ${WS_URL}...`);
+
+  try { ws = new WebSocket(WS_URL); }
+  catch(e) { log(`Ошибка создания WebSocket: ${e.message}`); scheduleReconnect(); return; }
+
+  ws.onopen = () => {
+    setPill('connected', 'LIVE');
+    log('WebSocket подключён');
+  };
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'update') handleUpdate(msg);
+    } catch(err) {
+      log(`JSON parse error: ${err.message}`);
+    }
+  };
+
+  ws.onclose = (e) => {
+    setPill('disconnected', 'OFFLINE');
+    log(`WS закрыт (code=${e.code}), переподключение через ${RECONNECT_DELAY/1000}s...`);
+    scheduleReconnect();
+  };
+
+  ws.onerror = () => {
+    log('WS ошибка соединения');
+  };
+}
+
+function scheduleReconnect() {
+  setTimeout(connect, RECONNECT_DELAY);
+}
+
+function setPill(cls, label) {
+  const pill = document.getElementById('ws-pill');
+  pill.className = 'ws-pill ' + cls;
+  document.getElementById('ws-label').textContent = label;
+  const dot = pill.querySelector('.dot');
+  dot.className = 'dot' + (cls === 'connected' ? ' blink' : '');
+}
+
+function handleUpdate(msg) {
+  updateCount++;
+  const now = Date.now();
+
+  let intervalStr = '—';
+  if (lastUpdateTime) {
+    const diff = ((now - lastUpdateTime) / 1000).toFixed(1);
+    intervalStr = `интервал: ${diff}s`;
+  }
+  lastUpdateTime = now;
+  lastUpdateTs = msg.ts;
+
+  document.getElementById('s-updates').textContent = updateCount;
+  document.getElementById('s-interval').textContent = intervalStr;
+
+  const nodes = msg.nodes || [];
+
+  nodes.forEach(n => {
+    if (!rttHistory[n.node_id]) rttHistory[n.node_id] = [];
+    const h = rttHistory[n.node_id];
+    h.push(n.latency_p95 !== null ? n.latency_p95 : 0);
+    if (h.length > HISTORY_LEN) h.shift();
+  });
+
+  updateSummary(nodes);
+
+  const byRegion = { eu: [], ru: [], na: [], apac: [], other: [] };
+  nodes.forEach(n => {
+    const region = n.region || NODE_META[n.node_id]?.region || 'other';
+    if (byRegion[region]) byRegion[region].push(n);
+  });
+
+  renderGrid('grid-eu',    byRegion.eu);
+  renderGrid('grid-ru',    byRegion.ru);
+  renderGrid('grid-na',    byRegion.na);
+  renderGrid('grid-apac',  byRegion.apac);
+  renderGrid('grid-other', byRegion.other);
+
+  log(`Получено ${nodes.length} узлов · ts=${new Date(msg.ts * 1000).toISOString().slice(11,19)} UTC`);
+}
+
+function updateSummary(nodes) {
+  const active = nodes.filter(n => n.loss_pct < 100);
+  const total  = nodes.length;
+
+  const online = active.filter(n => n.loss_pct < 50).length;
+  document.getElementById('s-online').innerHTML =
+    `${online}<span class="unit">/ ${total}</span>`;
+
+  const crit = nodes.filter(n => n.loss_pct >= 50).map(n => n.node_id);
+  document.getElementById('s-online-note').textContent =
+    crit.length ? `⚠ offline: ${crit.join(', ')}` : 'все узлы в строю';
+
+  const lats = active.map(n => n.latency_p95).filter(v => v != null);
+  const avgLat = lats.length ? (lats.reduce((a,b)=>a+b,0)/lats.length).toFixed(1) : '—';
+  document.getElementById('s-lat').innerHTML =
+    `${avgLat}<span class="unit">ms</span>`;
+  const maxLat = lats.length ? Math.max(...lats).toFixed(1) : '—';
+  document.getElementById('s-lat-note').textContent = `max: ${maxLat} ms`;
+
+  const jits = active.map(n => n.jitter).filter(v => v != null);
+  const avgJit = jits.length ? (jits.reduce((a,b)=>a+b,0)/jits.length).toFixed(2) : '—';
+  document.getElementById('s-jit').innerHTML =
+    `${avgJit}<span class="unit">ms</span>`;
+  document.getElementById('s-jit-note').textContent = 'среднее по сети';
+
+  const losses = active.map(n => n.loss_pct).filter(v => v != null);
+  const avgLoss = losses.length ? (losses.reduce((a,b)=>a+b,0)/losses.length).toFixed(3) : '—';
+  document.getElementById('s-loss').innerHTML =
+    `${avgLoss}<span class="unit">%</span>`;
+  const warnNodes = nodes.filter(n => n.loss_pct > 0.05 && n.loss_pct < 50);
+  document.getElementById('s-loss-note').textContent =
+    warnNodes.length ? `деградация: ${warnNodes.map(n=>n.node_id).join(', ')}` : 'в пределах SLA';
+}
+
+function renderGrid(gridId, nodes) {
+  const el = document.getElementById(gridId);
+  if (!nodes.length) { el.innerHTML = ''; return; }
+
+  el.innerHTML = nodes.map(n => cardHTML(n)).join('');
+}
+
+function cardHTML(n) {
+  const meta = NODE_META[n.node_id] || { loc: n.host || '—' };
+  const st = nodeStatus(n);
+  const badgeLabel = st === 'ok' ? 'OK' : st === 'warn' ? 'DEGRADED' : 'CRITICAL';
+
+  const lat   = n.latency_p95 != null ? n.latency_p95.toFixed(1) : '—';
+  const jit   = n.jitter      != null ? n.jitter.toFixed(2)      : '—';
+  const loss  = n.loss_pct    != null ? n.loss_pct.toFixed(3)    : '—';
+  const lastR = n.last_rtt    != null ? n.last_rtt.toFixed(1)    : '—';
+
+  const latC  = colorClass(n.latency_p95, 15, 25);
+  const jitC  = colorClass(n.jitter, 2, 4);
+  const lossC = colorClass(n.loss_pct, 0.05, 0.2);
+  const lastC = colorClass(n.last_rtt, 15, 25);
+
+  const history = rttHistory[n.node_id] || [];
+  const svgLine = sparkSVG(history, st);
+
+  const uptime = calcUptime(n.loss_pct);
+  const uptimeClass = n.loss_pct > 5 ? 'crit' : n.loss_pct > 0.5 ? 'warn' : '';
+
+  return `
+  <div class="card ${st}">
+    <div class="card-head">
+      <div>
+        <div class="card-name">${n.node_id}</div>
+        <div class="card-host">${meta.loc}</div>
+      </div>
+      <span class="badge ${st}">${badgeLabel}</span>
+    </div>
+    <div class="metrics">
+      <div class="metric">
+        <div class="m-label">p95</div>
+        <div class="m-val ${latC}">${lat}<span class="m-unit">ms</span></div>
+      </div>
+      <div class="metric">
+        <div class="m-label">jitter</div>
+        <div class="m-val ${jitC}">${jit}<span class="m-unit">ms</span></div>
+      </div>
+      <div class="metric">
+        <div class="m-label">loss</div>
+        <div class="m-val ${lossC}">${loss}<span class="m-unit">%</span></div>
+      </div>
+      <div class="metric">
+        <div class="m-label">last</div>
+        <div class="m-val ${lastC}">${lastR}<span class="m-unit">ms</span></div>
+      </div>
+    </div>
+    ${svgLine}
+    <div class="card-foot">
+      <span class="samples">samples: ${n.samples || 0}</span>
+      <span class="uptime ${uptimeClass}">uptime ~${uptime}</span>
+    </div>
+  </div>`;
+}
+
+function sparkSVG(values, status) {
+  const W = 280, H = 32;
+  if (!values.length) return `<svg class="spark" viewBox="0 0 ${W} ${H}"></svg>`;
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 6) - 3;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+
+  const color = status === 'ok' ? '#34d399' : status === 'warn' ? '#fbbf24' : '#f87171';
+  const area  = `0,${H} ${pts.join(' ')} ${W},${H}`;
+
+  return `
+  <svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <polyline fill="${color}" fill-opacity="0.08" stroke="none" points="${area}"/>
+    <polyline fill="none" stroke="${color}" stroke-width="1.5" points="${pts.join(' ')}"/>
+    <circle cx="${pts[pts.length-1].split(',')[0]}" cy="${pts[pts.length-1].split(',')[1]}"
+            r="2.5" fill="${color}"/>
+  </svg>`;
+}
+
+function nodeStatus(n) {
+  if (n.loss_pct >= 50) return 'crit';
+  if (n.loss_pct > 0.1 || n.latency_p95 > 25 || n.jitter > 4) return 'warn';
+  return 'ok';
+}
+
+function colorClass(v, warnT, critT) {
+  if (v == null) return 'c-dim';
+  return v < warnT ? 'c-ok' : v < critT ? 'c-warn' : 'c-crit';
+}
+
+function calcUptime(lossPct) {
+  if (lossPct >= 100) return '0 %';
+  const up = (100 - (lossPct || 0)).toFixed(3);
+  return `${up} %`;
+}
+
+function log(msg) {
+  const el = document.getElementById('log-msgs');
+  const ts = new Date().toISOString().slice(11, 23);
+  el.textContent = `[${ts}] ${msg}`;
+}
+
+function tick() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toUTCString().slice(17, 25);
+
+  if (lastUpdateTime) {
+    const ago = ((Date.now() - lastUpdateTime) / 1000).toFixed(0);
+    document.getElementById('update-ago').textContent = `обновлено ${ago}s назад`;
+  }
+}
+setInterval(tick, 1000);
+tick();
+
+connect();
+</script>
+
+</body>
+</html>
